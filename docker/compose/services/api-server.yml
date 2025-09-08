@@ -1,0 +1,104 @@
+# ===========================================
+# API服务器配置
+# ===========================================
+
+services:
+  # 生产模式 - 使用预构建镜像
+  api-server:
+    image: moonshot/api-server:latest
+    container_name: ${COMPOSE_PROJECT_NAME}-api-server
+    profiles: ["simple", "prod"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - MINIO_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - API_PORT=${API_PORT}
+      - GIN_MODE=${GIN_MODE}
+      - DEBUG=${DEBUG}
+    ports:
+      - "${API_EXTERNAL_PORT:-8080}:${API_PORT:-8080}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${API_PORT}/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - moonshot-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # 开发模式 - 从源码构建
+  api-server-dev:
+    build:
+      context: ../../..
+      dockerfile: docker/dockerfiles/Dockerfile.api-server
+      args:
+        - GO_VERSION=1.23.0
+    container_name: ${COMPOSE_PROJECT_NAME}-api-server
+    profiles: ["dev"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - MINIO_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - API_PORT=${API_PORT}
+      - GIN_MODE=${GIN_MODE}
+      - DEBUG=${DEBUG}
+    ports:
+      - "${API_EXTERNAL_PORT:-8080}:${API_PORT:-8080}"
+    volumes:
+      - ../../../logs:/app/logs
+      - ../../../config:/app/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${API_PORT}/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - moonshot-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+

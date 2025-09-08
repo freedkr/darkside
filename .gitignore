@@ -1,0 +1,20 @@
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+go.work
+go.work.sum
+.idea/
+.vscode/
+# env file
+.env
+
+.DS_Store
+config/
+logs/

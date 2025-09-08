@@ -1,0 +1,39 @@
+# Rule Worker Dockerfile
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /app
+
+# 安装依赖
+RUN apk add --no-cache git ca-certificates tzdata
+
+# 复制go mod文件
+COPY go.mod go.sum ./
+RUN go mod tidy
+
+# 复制源代码
+COPY . .
+
+# 构建应用
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o rule-worker ./services/rule-worker
+
+# 最终镜像
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates tzdata wget
+WORKDIR /root/
+
+# 复制构建的二进制文件
+COPY --from=builder /app/rule-worker .
+
+# 复制配置文件
+COPY --from=builder /app/configs/ configs/
+
+# 暴露端口
+EXPOSE 8081
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1
+
+# 启动命令
+CMD ["./rule-worker", "-config", "configs/config.yaml"]

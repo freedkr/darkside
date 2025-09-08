@@ -1,0 +1,139 @@
+# version: '3.8'
+
+# services:
+#   # LLM服务
+#   llm-service:
+#     build:
+#       context: ../../  # 从项目根目录构建
+#       dockerfile: services/llm-service/Dockerfile
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       # 基本配置
+#       - LLM_PORT=8080
+#       - LLM_MAX_WORKERS=10
+#       - LLM_MAX_QUEUE_SIZE=1000
+#       - LLM_TASK_TIMEOUT=5m
+#       - LLM_ENABLE_CORS=true
+#       - LLM_ENABLE_WEBSOCKET=true
+#       - LLM_ENABLE_METRICS=true
+      
+#       # 提供商配置
+#       - KIMI_API_KEY=${KIMI_API_KEY}
+#       - KIMI_BASE_URL=https://api.moonshot.cn/v1
+      
+#       # 可选认证
+#       - LLM_AUTH_TOKEN=${LLM_AUTH_TOKEN}
+      
+#       # 日志配置
+#       - GIN_MODE=release
+#       - LOG_LEVEL=info
+#       - TZ=Asia/Shanghai
+    
+#     volumes:
+#       # 挂载配置文件（可选）
+#       - ./configs:/root/configs:ro
+      
+#       # 挂载日志目录（可选）
+#       - ./logs:/var/log
+    
+#     # 健康检查
+#     healthcheck:
+#       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
+#       start_period: 40s
+    
+#     # 重启策略
+#     restart: unless-stopped
+    
+#     # 资源限制
+#     deploy:
+#       resources:
+#         limits:
+#           cpus: '2'
+#           memory: 1G
+#         reservations:
+#           cpus: '0.5'
+#           memory: 256M
+  
+#   # Redis (可选，用于分布式缓存)
+#   redis:
+#     image: redis:7-alpine
+#     ports:
+#       - "6379:6379"
+#     volumes:
+#       - redis-data:/data
+#     command: redis-server --appendonly yes
+#     restart: unless-stopped
+#     deploy:
+#       resources:
+#         limits:
+#           memory: 256M
+
+#   # PostgreSQL (可选，用于任务持久化)
+#   postgres:
+#     image: postgres:15-alpine
+#     ports:
+#       - "5432:5432"
+#     environment:
+#       - POSTGRES_DB=llm_service
+#       - POSTGRES_USER=llm_user
+#       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-llm_password}
+#     volumes:
+#       - postgres-data:/var/lib/postgresql/data
+#       # 初始化脚本（可选）
+#       # - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+#     restart: unless-stopped
+#     deploy:
+#       resources:
+#         limits:
+#           memory: 512M
+
+#   # Prometheus (可选，用于指标收集)
+#   prometheus:
+#     image: prom/prometheus:latest
+#     ports:
+#       - "9090:9090"
+#     volumes:
+#       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+#       - prometheus-data:/prometheus
+#     command:
+#       - '--config.file=/etc/prometheus/prometheus.yml'
+#       - '--storage.tsdb.path=/prometheus'
+#       - '--web.console.libraries=/etc/prometheus/console_libraries'
+#       - '--web.console.templates=/etc/prometheus/consoles'
+#       - '--storage.tsdb.retention.time=200h'
+#       - '--web.enable-lifecycle'
+#     restart: unless-stopped
+#     profiles: ["monitoring"]
+
+#   # Grafana (可选，用于指标可视化)
+#   grafana:
+#     image: grafana/grafana:latest
+#     ports:
+#       - "3000:3000"
+#     environment:
+#       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+#     volumes:
+#       - grafana-data:/var/lib/grafana
+#       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+#       - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+#     restart: unless-stopped
+#     profiles: ["monitoring"]
+
+# volumes:
+#   redis-data:
+#     driver: local
+#   postgres-data:
+#     driver: local
+#   prometheus-data:
+#     driver: local
+#   grafana-data:
+#     driver: local
+
+# networks:
+#   default:
+#     name: llm-service-network
+#     driver: bridge

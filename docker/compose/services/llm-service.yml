@@ -1,0 +1,150 @@
+# ===========================================
+# LLM服务配置
+# ===========================================
+
+services:
+  # LLM服务
+  llm-service:
+    build:
+      context: ${PROJECT_ROOT:-../../..}
+      dockerfile: docker/dockerfiles/Dockerfile.llm-service
+      args:
+        - BUILD_ENV=${BUILD_ENV:-production}
+    container_name: ${COMPOSE_PROJECT_NAME:-moonshot}-llm-service
+    ports:
+      - "${LLM_SERVICE_EXTERNAL_PORT:-8090}:${LLM_SERVICE_PORT:-8090}"
+    environment:
+      # 基本配置
+      - LLM_PORT=${LLM_SERVICE_PORT:-8090}
+      - LLM_MAX_WORKERS=${LLM_MAX_WORKERS:-10}
+      - LLM_MAX_QUEUE_SIZE=${LLM_MAX_QUEUE_SIZE:-1000}
+      - LLM_TASK_TIMEOUT=${LLM_TASK_TIMEOUT:-5m}
+      - LLM_ENABLE_CORS=${LLM_ENABLE_CORS:-true}
+      - LLM_ENABLE_WEBSOCKET=${LLM_ENABLE_WEBSOCKET:-true}
+      - LLM_ENABLE_METRICS=${LLM_ENABLE_METRICS:-true}
+      
+      # 提供商配置
+      - KIMI_API_KEY=${KIMI_API_KEY}
+      - KIMI_BASE_URL=${KIMI_BASE_URL:-https://api.moonshot.cn/v1}
+      
+      # 可选认证
+      - LLM_AUTH_TOKEN=${LLM_AUTH_TOKEN:-}
+      
+      # 日志配置
+      - GIN_MODE=${GIN_MODE:-release}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - TZ=${TZ:-Asia/Shanghai}
+      
+      # 数据库连接（如需要）
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-moonshot}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      
+      # Redis连接（如需要）
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    
+    volumes:
+      # 挂载配置文件
+      - ${PROJECT_ROOT:-../../..}/services/llm-service/configs:/app/configs:ro
+      
+      # 挂载日志目录
+      - ${PROJECT_ROOT:-../../..}/logs/llm-service:/var/log/llm-service
+      
+      # 缓存目录
+      - llm-service-cache:/app/cache
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${LLM_SERVICE_PORT:-8090}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # 重启策略
+    restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '${LLM_SERVICE_CPU_LIMIT:-2}'
+          memory: ${LLM_SERVICE_MEMORY_LIMIT:-1G}
+        reservations:
+          cpus: '${LLM_SERVICE_CPU_RESERVATION:-0.5}'
+          memory: ${LLM_SERVICE_MEMORY_RESERVATION:-256M}
+    
+    # 依赖关系
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    
+    networks:
+      - moonshot-network
+    
+    # 开发环境专用配置
+    profiles: ["simple",  "llm"]
+
+  # LLM服务开发模式 (带文件监听)
+  llm-service-dev:
+    image: golang:1.23-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-moonshot}-llm-service-dev
+    working_dir: /app/services/llm-service
+    environment:
+      # 开发环境配置
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug
+      - LLM_ENABLE_DEBUG=${LLM_ENABLE_DEBUG:-true}
+      - LLM_PORT=${LLM_SERVICE_PORT:-8090}
+      - LLM_MAX_WORKERS=${LLM_MAX_WORKERS:-10}
+      - LLM_MAX_QUEUE_SIZE=${LLM_MAX_QUEUE_SIZE:-1000}
+      - LLM_TASK_TIMEOUT=${LLM_TASK_TIMEOUT:-5m}
+      - LLM_ENABLE_CORS=${LLM_ENABLE_CORS:-true}
+      - LLM_ENABLE_WEBSOCKET=${LLM_ENABLE_WEBSOCKET:-true}
+      - LLM_ENABLE_METRICS=${LLM_ENABLE_METRICS:-true}
+      - KIMI_API_KEY=${KIMI_API_KEY}
+      - KIMI_BASE_URL=${KIMI_BASE_URL:-https://api.moonshot.cn/v1}
+      - LLM_AUTH_TOKEN=${LLM_AUTH_TOKEN:-}
+      - TZ=${TZ:-Asia/Shanghai}
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-moonshot}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    ports:
+      - "${LLM_SERVICE_EXTERNAL_PORT:-8090}:${LLM_SERVICE_PORT:-8090}"
+    volumes:
+      # 开发时挂载整个项目根目录
+      - ${PROJECT_ROOT:-../../..}:/app:rw
+      - ${PROJECT_ROOT:-../../..}/logs/llm-service:/var/log/llm-service
+    command: |
+      sh -c '
+        echo "Installing dependencies..." &&
+        cd /app &&
+        go mod download &&
+        echo "Starting LLM service in development mode..." &&
+        cd /app/services/llm-service &&
+        go run main.go
+      '
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - moonshot-network
+    profiles: ["dev"]
+
+volumes:
+  llm-service-cache:
+    driver: local
+    name: ${COMPOSE_PROJECT_NAME:-moonshot}-llm-service-cache

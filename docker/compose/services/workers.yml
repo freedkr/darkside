@@ -1,0 +1,102 @@
+# ===========================================
+# 工作节点服务 - Rule Worker & AI Worker
+# ===========================================
+
+services:
+  # 规则处理工作节点 - 生产模式
+  rule-worker:
+    image: moonshot/rule-worker:latest
+    profiles: ["simple", "prod"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - MINIO_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - WORKER_ID=${HOSTNAME}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "rule-worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      replicas: ${RULE_WORKER_REPLICAS:-2}
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    networks:
+      - moonshot-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 规则处理工作节点 - 开发模式
+  rule-worker-dev:
+    build:
+      context: ../../..
+      dockerfile: docker/dockerfiles/Dockerfile.rule-worker
+      args:
+        - GO_VERSION=1.23
+    profiles: ["dev"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - MINIO_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - MINIO_USE_SSL=false
+      - MINIO_BUCKET_NAME=moonshot
+      - LLM_SERVICE_URL=moonshot-llm-service-dev:8090
+      - LLM_ENABLED=true
+      - PDF_VALIDATOR_URL=moonshot-pdf-validator-api:8001
+      - PDF_TEST_FILE_PATH=/root/testdata/2025042918334715812.pdf
+      - WORKER_ID=${HOSTNAME}
+    volumes:
+      - ../../../logs:/app/logs
+      - ../../../config:/app/config
+      - ../../../testdata:/root/testdata:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "rule-worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      replicas: ${RULE_WORKER_REPLICAS:-1}
+    networks:
+      - moonshot-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

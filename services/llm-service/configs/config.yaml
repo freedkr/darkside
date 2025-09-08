@@ -1,0 +1,132 @@
+# LLM Service 配置文件
+llm_service:
+  # 服务器配置
+  server:
+    port: 8090
+    read_timeout: "30s"
+    write_timeout: "30s"
+    idle_timeout: "60s"
+    max_request_size: 33554432  # 32MB
+    enable_cors: true
+    enable_metrics: true
+    enable_websocket: true
+    auth_token: ""  # 可选的认证令牌
+  
+  # 调度器配置
+  scheduler:
+    max_workers: 10
+    max_queue_size: 1000
+    task_timeout: "5m"
+    cleanup_interval: "1m"
+    stats_interval: "30s"
+    retry_attempts: 3
+    retry_delay: "1s"
+  
+  # 提供商配置
+  providers:
+    kimi:
+      enabled: true
+      api_key: "${KIMI_API_KEY}"
+      base_url: "https://api.moonshot.cn/v1"
+      timeout: "30s"
+      max_retries: 3
+      rate_limit:
+        requests_per_minute: 60
+        concurrent_requests: 2
+        tokens_per_minute: 600000
+      models:
+        - "moonshot-v1-auto"
+        - "moonshot-v1-8k"
+        - "moonshot-v1-32k"
+        - "moonshot-v1-128k"
+    
+    # 可以添加其他提供商
+    # openai:
+    #   enabled: false
+    #   api_key: "${OPENAI_API_KEY}"
+    #   base_url: "https://api.openai.com/v1"
+    #   models:
+    #     - "gpt-4"
+    #     - "gpt-3.5-turbo"
+    
+    # qwen:
+    #   enabled: false
+    #   api_key: "${QWEN_API_KEY}"
+    #   base_url: "https://dashscope.aliyuncs.com/api/v1"
+  
+  # 路由规则
+  routing_rules:
+    - task_type: "semantic_analysis"
+      providers: ["kimi"]
+      cost_weight: 0.3
+      speed_weight: 0.7
+      quality_weight: 1.0
+    
+    - task_type: "data_cleaning"
+      providers: ["kimi"]
+      cost_weight: 0.5
+      speed_weight: 0.5
+      quality_weight: 1.0
+    
+    - task_type: "category_match"
+      providers: ["kimi"]
+      cost_weight: 0.2
+      speed_weight: 0.8
+      quality_weight: 1.0
+  
+  # 并发控制
+  concurrency:
+    global_max: 20
+    provider_limits:
+      kimi: 2
+      openai: 5
+      qwen: 3
+    task_type_limits:
+      semantic_analysis: 10
+      data_cleaning: 8
+      category_match: 5
+    
+    # 自适应并发控制
+    adaptive:
+      enabled: true
+      adjustment_interval: "30s"
+      target_success_rate: 0.95
+      target_latency: "5s"
+      min_concurrency: 1
+      max_concurrency: 50
+  
+  # 缓存配置
+  cache:
+    enabled: true
+    ttl: "1h"
+    max_size: 10000
+    cleanup_interval: "10m"
+  
+  # 监控和指标
+  monitoring:
+    enabled: true
+    metrics_interval: "10s"
+    health_check_interval: "30s"
+    
+    # 日志配置
+    logging:
+      level: "info"  # debug, info, warn, error
+      format: "json"  # text, json
+      output: "stdout"  # stdout, stderr, file
+      file_path: "/var/log/llm-service.log"
+      max_size: 100  # MB
+      max_backups: 3
+      max_age: 7  # days
+  
+  # 安全配置
+  security:
+    rate_limiting:
+      enabled: true
+      requests_per_minute: 1000
+      burst: 100
+    
+    # API限制
+    api_limits:
+      max_concurrent_requests: 100
+      max_request_size: "32MB"
+      timeout: "5m"

@@ -1,0 +1,70 @@
+app:
+  name: "occupation-processor"
+  version: "2.0.0"
+  environment: "development" 
+  debug: true
+  profile: true  # 开启性能分析
+
+input:
+  file_path: "/data/occupation_classification.xlsx"
+  sheet_name: "Table1"
+  encoding: "utf-8"
+  max_rows: 50000      # 限制最大读取行数
+  strict_mode: true    # 生产环境使用严格模式
+  trim_space: true
+  replace_nbsp: true
+
+output:
+  file_path: "/data/output/occupation_hierarchy.json"
+  format: "json"
+  pretty_print: false  # 生产环境使用压缩格式
+  create_dir: true
+  backup_existing: true
+  indent:
+    type: "space"
+    size: 2
+  compression:
+    enabled: true
+    type: "gzip"
+    level: 6
+
+processing:
+  workers: 8           # 根据CPU数量调整
+  batch_size: 200
+  enable_cache: true
+  cache_size: 5000
+  cache_ttl: "2h"
+  strict_mode: true
+  continue_on_error: false  # 生产环境不容忍错误
+  max_memory_mb: 1024       # 提高内存限制
+  timeout: "45m"
+  retry_count: 5
+  retry_delay: "10s"
+
+logging:
+  level: "info"
+  format: "json"
+  output: "file"
+  file_path: "/var/log/occupation-processor.log"
+  max_size_mb: 200
+  max_backups: 7
+  max_age_days: 30
+  compress: true
+  enable_color: false      # 生产环境关闭颜色
+
+monitoring:
+  enabled: true
+  metrics_port: 9090
+  health_port: 8080
+  profiler_port: 6060
+  enable_pprof: true # 对应 app.profile 的意图
+  report_interval: "15s"
+
+database:
+  host: "postgres"
+  port: 5432
+  database: "moonshot"
+  username: "postgres"
+  password: "postgres123"
+  ssl_mode: "disable"
+  schema: "moonshot"

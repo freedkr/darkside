@@ -1,0 +1,191 @@
+# ===========================================
+# PDF Validator Service Deployment
+# 独立部署配置 - 保留原有服务自己的配置
+# ===========================================
+version: '3.8'
+
+services:
+  # PDF验证服务 - API服务器
+  pdf-validator-api:
+    build:
+      context: ../../../services/pdf-validator
+      dockerfile: Dockerfile
+    container_name: pdf-validator-api
+    ports:
+      - "8001:8001"
+    environment:
+      - DEBUG=${DEBUG:-false}
+      - HOST=0.0.0.0
+      - PORT=8001
+      - DATABASE_HOST=${DATABASE_HOST:-postgres}
+      - DATABASE_PORT=${DATABASE_PORT:-5432}
+      - DATABASE_NAME=${DATABASE_NAME:-moonshot}
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-password}
+      - DATABASE_SCHEMA=${DATABASE_SCHEMA:-moonshot}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-pdf-files}
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - pdf-validator-network
+
+  # PDF验证服务 - Celery Worker
+  pdf-validator-worker:
+    build:
+      context: ../../../services/pdf-validator
+      dockerfile: Dockerfile
+    container_name: pdf-validator-worker
+    command: celery -A app.celery worker --loglevel=info --concurrency=4 --queues=pdf_validation_tasks,pdf_priority_tasks
+    environment:
+      - DEBUG=${DEBUG:-false}
+      - DATABASE_HOST=${DATABASE_HOST:-postgres}
+      - DATABASE_PORT=${DATABASE_PORT:-5432}
+      - DATABASE_NAME=${DATABASE_NAME:-moonshot}
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-password}
+      - DATABASE_SCHEMA=${DATABASE_SCHEMA:-moonshot}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-pdf-files}
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    volumes:
+      - ./logs:/app/logs
+      - /tmp:/tmp  # 临时文件目录
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # 运行2个worker实例
+    networks:
+      - pdf-validator-network
+
+  # Celery 任务监控
+  pdf-validator-flower:
+    build:
+      context: ../../../services/pdf-validator
+      dockerfile: Dockerfile
+    container_name: pdf-validator-flower
+    command: celery -A app.celery flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - pdf-validator-network
+
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: pdf-validator-postgres
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-moonshot}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - pdf-validator-network
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: pdf-validator-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - pdf-validator-network
+
+  # MinIO 对象存储
+  minio:
+    image: minio/minio:latest
+    container_name: pdf-validator-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - pdf-validator-network
+
+  # 初始化MinIO存储桶
+  minio-init:
+    image: minio/mc:latest
+    container_name: pdf-validator-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      mc mb --ignore-existing myminio/pdf-files;
+      mc anonymous set public myminio/pdf-files;
+      echo 'MinIO bucket created successfully';
+      exit 0;
+      "
+    networks:
+      - pdf-validator-network
+
+volumes:
+  postgres_data:
+    name: pdf-validator-postgres-data
+  redis_data:
+    name: pdf-validator-redis-data
+  minio_data:
+    name: pdf-validator-minio-data
+
+networks:
+  pdf-validator-network:
+    name: pdf-validator-network
+    driver: bridge
